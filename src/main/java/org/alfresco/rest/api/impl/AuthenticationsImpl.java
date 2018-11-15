@@ -207,13 +207,13 @@ public class AuthenticationsImpl implements Authentications
         }
         else if (authorizationParts[0].equalsIgnoreCase("bearer"))
         {
-            return getTicketFormRemoteUserMapperUserId(parameters);
+            return getTicketFromRemoteUserMapperUserId(parameters);
         }
 
         throw new InvalidArgumentException("Authorization '" + authorizationParts[0] + "' not supported.");
     }
 
-    private String getTicketFormRemoteUserMapperUserId(Parameters parameters)
+    private String getTicketFromRemoteUserMapperUserId(Parameters parameters)
     {
         // If we got to execute any of the code in this class, it means that, somehow, the user is authenticated;
         // If we got this far, in this method, it means that:
