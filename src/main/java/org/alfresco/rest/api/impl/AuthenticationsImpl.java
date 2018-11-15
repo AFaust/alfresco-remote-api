@@ -194,25 +194,8 @@ public class AuthenticationsImpl implements Authentications
             throw new InvalidArgumentException("Authorization header is required.");
         }
 
-        boolean isBasicHeader = false;
-        boolean isBearerHeader = false;
-
         final String[] authorizationParts = authorization.split(" ");
         if (authorizationParts[0].equalsIgnoreCase("basic"))
-        {
-            isBasicHeader = true;
-        }
-        else if (authorizationParts[0].equalsIgnoreCase("bearer"))
-        {
-            isBearerHeader = true;
-        }
-
-        if (!isBasicHeader && !isBearerHeader)
-        {
-            throw new InvalidArgumentException("Authorization '" + authorizationParts[0] + "' not supported.");
-        }
-
-        if (isBasicHeader)
         {
             final String decodedAuthorisation = new String(Base64.decode(authorizationParts[1]));
             Authorization authObj = new Authorization(decodedAuthorisation);
@@ -222,14 +205,12 @@ public class AuthenticationsImpl implements Authentications
             }
             return authObj.getTicket();
         }
-        else
+        else if (authorizationParts[0].equalsIgnoreCase("bearer"))
         {
-            if (isBearerHeader)
-            {
-                return getTicketFormRemoteUserMapperUserId(parameters);
-            }
+            return getTicketFormRemoteUserMapperUserId(parameters);
         }
-        throw new InvalidArgumentException("Authorization not supported.");
+
+        throw new InvalidArgumentException("Authorization '" + authorizationParts[0] + "' not supported.");
     }
 
     private String getTicketFormRemoteUserMapperUserId(Parameters parameters)
@@ -240,6 +221,10 @@ public class AuthenticationsImpl implements Authentications
         // * there is an "Authorization" header that says it is "bearer";
         // * the authorization type in the header is not "basic"; therefore the user was not authenticated with basic auth
 
+        // We could end up here authenticated with some other mechanism (kerberos (SSO) or other custom authenticators)
+        // We need to validate the bearer token so as not to open an exploit where we return the alf_ticket even if
+        // the value of the bearer access token is not valid;
+
         // Validate the bearer access token again and
         // confirm that the current authenticated user is the same user specified in the bearer token
         HttpServletRequest httpServletRequest = extractHttpServletRequestFromParameters(parameters);
@@ -248,6 +233,7 @@ public class AuthenticationsImpl implements Authentications
             String remoteUser = remoteUserMapper.getRemoteUser(httpServletRequest);
             // We accept that the remoteUserMapper may have not been the IdentityServiceRemoteUserMapper,
             // and could have been DefaultRemoteUserMapper (using External authentication), but that is ok
+            // because the business logic is similar.
             if (remoteUser != null)
             {
                 return ticketComponent.getCurrentTicket(remoteUser, false);
@@ -258,6 +244,12 @@ public class AuthenticationsImpl implements Authentications
 
     private HttpServletRequest extractHttpServletRequestFromParameters(Parameters parameters)
     {
+        // An alternative solution would be to create some sort of ServletHttpFacade object based on the information present
+        // in the parameters object. But for that we need to write a lot of code and check that we pass all the data required
+        // by the keycloak library;
+
+        // Parameters object is clearly not designed to give us access to the HttpServletRequest object,
+        // but we know that remoteUserMapper.getRemoteUser will use this in a safe way
         if (parameters.getRequest() instanceof BufferedRequest &&
             ((BufferedRequest) parameters.getRequest()).getNext() instanceof PublicApiTenantWebScriptServletRequest)
         {
