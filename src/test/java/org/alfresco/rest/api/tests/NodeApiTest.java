@@ -3238,6 +3238,51 @@ public class NodeApiTest extends AbstractSingleNetworkSiteTest
         deleteNode(f0Id);
     }
 
+    /**
+     * Tests update type
+     * <p>PUT:</p>
+     * {@literal <host>:<port>/alfresco/api/-default-/public/alfresco/versions/1/nodes/<nodeId>}
+     */
+    @Test
+    public void testUpdateType() throws Exception
+    {
+        setRequestContext(user1);
+
+        // create folder f0
+        String folderName = "f0-testUpdateOwner-"+RUNID;
+        Folder folderResp = createFolder(Nodes.PATH_SHARED, folderName);
+        String f0Id = folderResp.getId();
+
+        assertNull(user1, folderResp.getProperties()); // owner is implied
+
+        // non-update case
+        Folder fUpdate = new Folder();
+        fUpdate.setNodeType(folderResp.getNodeType());
+
+        HttpResponse response = put(URL_NODES, f0Id, toJsonAsStringNonNull(fUpdate), null, 200);
+        folderResp = RestApiUtil.parseRestApiEntry(response.getJsonResponse(), Folder.class);
+
+        assertEquals(TYPE_CM_FOLDER, folderResp.getNodeType());
+
+        // set type to an incompatible type
+        fUpdate.setNodeType(TYPE_CM_CONTENT);
+        put(URL_NODES, f0Id, toJsonAsStringNonNull(fUpdate), null, 400);
+
+        // set type to system folder (a special, unsupported case)
+        fUpdate.setNodeType("cm:systemfolder");
+        put(URL_NODES, f0Id, toJsonAsStringNonNull(fUpdate), null, 400);
+
+        // set type to supported folder sub-type
+        // (none exists in contentModel, so forumsModel it is)
+        fUpdate.setNodeType("fm:forums");
+        response = put(URL_NODES, f0Id, toJsonAsStringNonNull(fUpdate), null, 200);
+        folderResp = RestApiUtil.parseRestApiEntry(response.getJsonResponse(), Folder.class);
+        assertEquals("fm:forums", folderResp.getNodeType());
+
+        // set type to a generalised type (unsupported case)
+        fUpdate.setNodeType(TYPE_CM_FOLDER);
+        put(URL_NODES, f0Id, toJsonAsStringNonNull(fUpdate), null, 400);
+    }
 
     /**
      * Tests update file content
