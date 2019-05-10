@@ -54,6 +54,19 @@
       		</property>
          </properties>
       </type>
+
+      <type name="custom:nodeWithAlternativeContent">
+         <title>Node with alternative contents</title>
+         <parent>cm:cmobject</parent>
+         <properties>
+            <property name="custom:alternativeContent1">
+                <type>d:content</type>
+            </property>
+            <property name="custom:alternativeContent2">
+                <type>d:content</type>
+            </property>
+         </properties>
+      </type>
 	  
 	</types>
 	 
@@ -79,6 +92,15 @@
 	 <aspect name="custom:marker">
       <title>marker</title>
      </aspect>
+     
+     <aspect name="custom:optionalAlternativeContent">
+         <title>Optional alternative contents</title>
+         <properties>
+            <property name="custom:alternativeContent3">
+                <type>d:content</type>
+            </property>
+         </properties>
+      </aspect>
       
    </aspects>
       

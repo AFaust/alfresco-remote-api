@@ -3637,6 +3637,82 @@ public class NodeApiTest extends AbstractSingleNetworkSiteTest
     }
 
     @Test
+    public void testUploadAlternativeContent() throws Exception
+    {
+        setRequestContext(null, DEFAULT_ADMIN, DEFAULT_ADMIN_PWD);
+
+        String fileName1 = "quick-1.txt";
+        File file1 = getResourceFile(fileName1);
+
+        MultiPartBuilder multiPartBuilder = MultiPartBuilder.create()
+                .setFileData(new FileData(UUID.randomUUID().toString(), file1))
+                .setNodeType("custom:nodeWithAlternativeContent")
+                .setContentProperty("custom:alternativeContent1");
+        MultiPartRequest reqBody = multiPartBuilder.build();
+
+        HttpResponse response = post(getNodeChildrenUrl(Nodes.PATH_MY), reqBody.getBody(), null, reqBody.getContentType(), 201);
+        Node node = RestApiUtil.parseRestApiEntry(response.getJsonResponse(), Node.class);
+        
+        String fileName2 = "quick.pdf";
+        File file2 = getResourceFile(fileName2);
+        
+        response = putBinary(getNodeContentUrl(node.getId()), 1, new BinaryPayload(file2, "application/pdf"), "?contentProperty=custom:alternativeContent2", null,
+                200);
+        node = RestApiUtil.parseRestApiEntry(response.getJsonResponse(), Node.class);
+
+        // default to cm:content, which is invalid for node-type
+        response = putBinary(getNodeContentUrl(node.getId()), 1, new BinaryPayload(file2, "application/pdf"), null, null,
+                400);
+
+        // default to cm:content, which is invalid for node-type
+        multiPartBuilder = MultiPartBuilder.create()
+                .setFileData(new FileData(UUID.randomUUID().toString(), file1))
+                .setNodeType("custom:nodeWithAlternativeContent");
+        reqBody = multiPartBuilder.build();
+
+        response = post(getNodeChildrenUrl(Nodes.PATH_MY), reqBody.getBody(), null, reqBody.getContentType(), 400);
+
+        // property is invalid for default cm:content node-type
+        multiPartBuilder = MultiPartBuilder.create()
+                .setFileData(new FileData(UUID.randomUUID().toString(), file1))
+                .setContentProperty("custom:alternativeContent1");
+        reqBody = multiPartBuilder.build();
+
+        response = post(getNodeChildrenUrl(Nodes.PATH_MY), reqBody.getBody(), null, reqBody.getContentType(), 400);
+
+        // property is invalid for default cm:content node-type, but valid via an optional aspect
+        multiPartBuilder = MultiPartBuilder.create()
+                .setFileData(new FileData(UUID.randomUUID().toString(), file1))
+                .setContentProperty("custom:alternativeContent3");
+        reqBody = multiPartBuilder.build();
+
+        response = post(getNodeChildrenUrl(Nodes.PATH_MY), reqBody.getBody(), null, reqBody.getContentType(), 201);
+        Document document = RestApiUtil.parseRestApiEntry(response.getJsonResponse(), Document.class);
+        ContentInfo contentInfo = document.getContent();
+        assertNull(contentInfo);
+
+        // default to cm:content
+        response = putBinary(getNodeContentUrl(document.getId()), 1, new BinaryPayload(file2, "application/pdf"), null, null,
+                200);
+        document = RestApiUtil.parseRestApiEntry(response.getJsonResponse(), Document.class);
+        contentInfo = document.getContent();
+        assertNotNull(contentInfo);
+        assertEquals(MimetypeMap.MIMETYPE_PDF, contentInfo.getMimeType());
+        assertEquals("UTF-8", contentInfo.getEncoding());
+    }
+
+    /**
+     * Tests download of content in alternative properties.
+     * <p>GET:</p>
+     * {@literal <host>:<port>/alfresco/api/-default-/public/alfresco/versions/1/nodes/<nodeId>/content}
+     */
+    @Test
+    public void testDownloadAlternativeContent() throws Exception
+    {
+        // TODO
+    }
+
+    @Test
     public void testGetNodeWithEmptyProperties() throws Exception
     {
         setRequestContext(user1);

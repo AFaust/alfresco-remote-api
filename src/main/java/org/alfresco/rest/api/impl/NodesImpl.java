@@ -124,6 +124,7 @@ import org.alfresco.service.cmr.activities.ActivitiesTransactionListener;
 import org.alfresco.service.cmr.activities.ActivityInfo;
 import org.alfresco.service.cmr.activities.ActivityPoster;
 import org.alfresco.service.cmr.dictionary.AspectDefinition;
+import org.alfresco.service.cmr.dictionary.ClassDefinition;
 import org.alfresco.service.cmr.dictionary.DataTypeDefinition;
 import org.alfresco.service.cmr.dictionary.DictionaryService;
 import org.alfresco.service.cmr.dictionary.PropertyDefinition;
@@ -1845,7 +1846,7 @@ public class NodesImpl implements Nodes
         if (isContent)
         {
             // create empty file node - note: currently will be set to default encoding only (UTF-8)
-            nodeRef = createNewFile(parentNodeRef, nodeName, nodeTypeQName, null, props, assocTypeQName, parameters, versionMajor, versionComment);
+            nodeRef = createNewFile(parentNodeRef, nodeName, nodeTypeQName, ContentModel.PROP_CONTENT, null, props, assocTypeQName, parameters, versionMajor, versionComment);
         }
         else
         {
@@ -2608,13 +2609,24 @@ public class NodesImpl implements Nodes
     @Override
     public BinaryResource getContent(NodeRef nodeRef, Parameters parameters, boolean recordActivity)
     {
-        if (!nodeMatches(nodeRef, Collections.singleton(ContentModel.TYPE_CONTENT), null, false))
+        String contentProperty = parameters.getParameter(PARAM_CONTENTPROPERTY);
+        QName contentPropertyQName = contentProperty != null ? createQName(contentProperty) : ContentModel.PROP_CONTENT;
+
+        PropertyDefinition contentPropertyDef = dictionaryService.getProperty(contentPropertyQName);
+        if (contentPropertyDef == null || !DataTypeDefinition.CONTENT.equals(contentPropertyDef.getDataType().getName()))
         {
-            throw new InvalidArgumentException("NodeId of content is expected: " + nodeRef.getId());
+            throw new InvalidArgumentException(
+                    "Valid content property is expected: " + contentPropertyQName.toPrefixString(namespaceService));
+        }
+
+        ClassDefinition contentContainerClass = contentPropertyDef.getContainerClass();
+        if (!contentContainerClass.isAspect() && !nodeMatches(nodeRef, Collections.singleton(contentContainerClass.getName()), null, false))
+        {
+            throw new InvalidArgumentException("NodeId of correct type with content is expected: " + nodeRef.getId());
         }
 
         Map<QName, Serializable> nodeProps = nodeService.getProperties(nodeRef);
-        ContentData cd = (ContentData) nodeProps.get(ContentModel.PROP_CONTENT);
+        ContentData cd = (ContentData) nodeProps.get(contentPropertyQName);
         String name = (String) nodeProps.get(ContentModel.PROP_NAME);
 
         org.alfresco.rest.framework.resource.content.ContentInfo ci = null;
@@ -2645,13 +2657,13 @@ public class NodesImpl implements Nodes
         }
         String attachFileName = (attach ? name : null);
 
-        if (recordActivity)
+        if (recordActivity && ContentModel.PROP_CONTENT.equals(contentPropertyQName))
         {
             final ActivityInfo activityInfo = getActivityInfo(getParentNodeRef(nodeRef), nodeRef);
             postActivity(Activity_Type.DOWNLOADED, activityInfo, true);
         }
 
-        return new NodeBinaryResource(nodeRef, ContentModel.PROP_CONTENT, ci, attachFileName);
+        return new NodeBinaryResource(nodeRef, contentPropertyQName, ci, attachFileName);
     }
 
     @Override
@@ -2664,9 +2676,20 @@ public class NodesImpl implements Nodes
 
         final NodeRef nodeRef = validateNode(fileNodeId);
 
-        if (! nodeMatches(nodeRef, Collections.singleton(ContentModel.TYPE_CONTENT), null, false))
+        String contentProperty = parameters.getParameter(PARAM_CONTENTPROPERTY);
+        QName contentPropertyQName = contentProperty != null ? createQName(contentProperty) : ContentModel.PROP_CONTENT;
+
+        PropertyDefinition contentPropertyDef = dictionaryService.getProperty(contentPropertyQName);
+        if (contentPropertyDef == null || !DataTypeDefinition.CONTENT.equals(contentPropertyDef.getDataType().getName()))
         {
-            throw new InvalidArgumentException("NodeId of content is expected: " + nodeRef.getId());
+            throw new InvalidArgumentException(
+                    "Valid content property is expected: " + contentPropertyQName.toPrefixString(namespaceService));
+        }
+
+        ClassDefinition contentContainerClass = contentPropertyDef.getContainerClass();
+        if (!contentContainerClass.isAspect() && !nodeMatches(nodeRef, Collections.singleton(contentContainerClass.getName()), null, false))
+        {
+            throw new InvalidArgumentException("NodeId of correct type with content is expected: " + nodeRef.getId());
         }
 
         Boolean versionMajor = null;
@@ -2688,17 +2711,17 @@ public class NodesImpl implements Nodes
             fileName = (String)nodeService.getProperty(nodeRef, ContentModel.PROP_NAME);
         }
         
-        return updateExistingFile(null, nodeRef, fileName, contentInfo, stream, parameters, versionMajor, versionComment);
+        return updateExistingFile(null, nodeRef, fileName, contentPropertyQName, contentInfo, stream, parameters, versionMajor, versionComment);
     }
 
-    private Node updateExistingFile(NodeRef parentNodeRef, NodeRef nodeRef, String fileName, BasicContentInfo contentInfo, InputStream stream, Parameters parameters, Boolean versionMajor, String versionComment)
+    private Node updateExistingFile(NodeRef parentNodeRef, NodeRef nodeRef, String fileName, QName contentPropertyQName, BasicContentInfo contentInfo, InputStream stream, Parameters parameters, Boolean versionMajor, String versionComment)
     {
         boolean isVersioned = versionService.isVersioned(nodeRef);
 
         behaviourFilter.disableBehaviour(nodeRef, ContentModel.ASPECT_VERSIONABLE);
         try
         {
-            writeContent(nodeRef, fileName, stream, true);
+            writeContent(nodeRef, fileName, contentPropertyQName, stream, true);
 
             if ((isVersioned) || (versionMajor != null) || (versionComment != null) )
             {
@@ -2723,10 +2746,13 @@ public class NodesImpl implements Nodes
                 createVersion(nodeRef, isVersioned, versionType, versionComment);
             }
 
-            ActivityInfo activityInfo =  getActivityInfo(parentNodeRef, nodeRef);
-            postActivity(Activity_Type.UPDATED, activityInfo, false);
+            if (ContentModel.PROP_CONTENT.equals(contentPropertyQName))
+            {
+                ActivityInfo activityInfo =  getActivityInfo(parentNodeRef, nodeRef);
+                postActivity(Activity_Type.UPDATED, activityInfo, false);
 
-            extractMetadata(nodeRef);
+                extractMetadata(nodeRef);
+            }
         }
         finally
         {
@@ -2736,11 +2762,11 @@ public class NodesImpl implements Nodes
         return getFolderOrDocumentFullInfo(nodeRef, null, null, parameters);
     }
 
-    private void writeContent(NodeRef nodeRef, String fileName, InputStream stream, boolean guessEncoding)
+    private void writeContent(NodeRef nodeRef, String fileName, QName contentPropertyQName, InputStream stream, boolean guessEncoding)
     {
         try
         {
-            ContentWriter writer = contentService.getWriter(nodeRef, ContentModel.PROP_CONTENT, true);
+            ContentWriter writer = contentService.getWriter(nodeRef, contentPropertyQName, true);
 
             String mimeType = mimetypeService.guessMimetype(fileName);
             if ((mimeType != null) && (!mimeType.equals(MimetypeMap.MIMETYPE_BINARY)))
@@ -2861,6 +2887,7 @@ public class NodesImpl implements Nodes
         Content content = null;
         boolean autoRename = false;
         QName nodeTypeQName = ContentModel.TYPE_CONTENT;
+        QName contentPropertyQName = ContentModel.PROP_CONTENT;
         boolean overwrite = false; // If a fileName clashes for a versionable file
         Boolean versionMajor = null;
         String versionComment = null;
@@ -2897,10 +2924,10 @@ public class NodesImpl implements Nodes
 
                 case "nodetype":
                     nodeTypeQName = createQName(getStringOrNull(field.getValue()));
-                    if (! isSubClass(nodeTypeQName, ContentModel.TYPE_CONTENT))
-                    {
-                        throw new InvalidArgumentException("Can only upload type of cm:content: " + nodeTypeQName);
-                    }
+                    break;
+
+                case "contentproperty":
+                    contentPropertyQName = createQName(getStringOrNull(field.getValue()));
                     break;
 
                 case "overwrite":
@@ -2940,6 +2967,26 @@ public class NodesImpl implements Nodes
                     }
                 }
             }
+        }
+
+        boolean isContent = isSubClass(nodeTypeQName, ContentModel.TYPE_CONTENT);
+        if (! isContent)
+        {
+            validateCmObject(nodeTypeQName);
+        }
+
+        PropertyDefinition contentPropertyDef = dictionaryService.getProperty(contentPropertyQName);
+        if (contentPropertyDef == null || !DataTypeDefinition.CONTENT.equals(contentPropertyDef.getDataType().getName()))
+        {
+            throw new InvalidArgumentException(
+                    "Valid content property is expected: " + contentPropertyQName.toPrefixString(namespaceService));
+        }
+
+        ClassDefinition contentContainerClass = contentPropertyDef.getContainerClass();
+        if (!contentContainerClass.isAspect() && !isSubClass(nodeTypeQName, contentContainerClass.getName()))
+        {
+            throw new InvalidArgumentException("Can only upload type of " + contentContainerClass.getName().toPrefixString(namespaceService)
+                    + ": " + nodeTypeQName.toPrefixString(namespaceService));
         }
 
         // Ensure mandatory file attributes have been located. Need either
@@ -2985,7 +3032,7 @@ public class NodesImpl implements Nodes
                 {
                     // overwrite existing (versionable) file
                     BasicContentInfo contentInfo = new ContentInfoImpl(content.getMimetype(), content.getEncoding(), -1, null);
-                    return updateExistingFile(parentNodeRef, existingFile, fileName, contentInfo, content.getInputStream(), parameters, versionMajor, versionComment);
+                    return updateExistingFile(parentNodeRef, existingFile, fileName, contentPropertyQName, contentInfo, content.getInputStream(), parameters, versionMajor, versionComment);
                 }
                 else
                 {
@@ -3001,7 +3048,7 @@ public class NodesImpl implements Nodes
             }
 
             // Create a new file.
-            NodeRef nodeRef = createNewFile(parentNodeRef, fileName, nodeTypeQName, content, properties, assocTypeQName, parameters, versionMajor, versionComment);
+            NodeRef nodeRef = createNewFile(parentNodeRef, fileName, nodeTypeQName, contentPropertyQName, content, properties, assocTypeQName, parameters, versionMajor, versionComment);
             
             // Create the response
             final Node fileNode = getFolderOrDocumentFullInfo(nodeRef, parentNodeRef, nodeTypeQName, parameters);
@@ -3026,20 +3073,20 @@ public class NodesImpl implements Nodes
          */
     }
 
-    private NodeRef createNewFile(NodeRef parentNodeRef, String fileName, QName nodeType, Content content, Map<QName, Serializable> props, QName assocTypeQName, Parameters params,
+    private NodeRef createNewFile(NodeRef parentNodeRef, String fileName, QName nodeType, QName contentPropertyQName, Content content, Map<QName, Serializable> props, QName assocTypeQName, Parameters params,
                                   Boolean versionMajor, String versionComment)
     {
         NodeRef nodeRef = createNodeImpl(parentNodeRef, fileName, nodeType, props, assocTypeQName);
-        
+
         if (content == null)
         {
             // Write "empty" content
-            writeContent(nodeRef, fileName, new ByteArrayInputStream("".getBytes()), false);
+            writeContent(nodeRef, fileName, contentPropertyQName, new ByteArrayInputStream("".getBytes()), false);
         }
         else
         {
             // Write content
-            writeContent(nodeRef, fileName, content.getInputStream(), true);
+            writeContent(nodeRef, fileName, contentPropertyQName, content.getInputStream(), true);
         }
         
         if ((versionMajor != null) || (versionComment != null))
@@ -3056,7 +3103,10 @@ public class NodesImpl implements Nodes
 
                 createVersion(nodeRef, false, versionType, versionComment);
 
-                extractMetadata(nodeRef);
+                if (ContentModel.PROP_CONTENT.equals(contentPropertyQName))
+                {
+                    extractMetadata(nodeRef);
+                }
             } finally
             {
                 behaviourFilter.enableBehaviour(nodeRef, ContentModel.ASPECT_VERSIONABLE);

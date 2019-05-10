@@ -56,12 +56,12 @@ public class MultiPartBuilder
     private String relativePath;
     private String updateNodeRef;
     private String description;
-    private String contentTypeQNameStr;
     private List<String> aspects = Collections.emptyList();
     private Boolean majorVersion;
     private Boolean overwrite;
     private Boolean autoRename;
     private String nodeType;
+    private String contentProperty;
     private List<String> renditionIds = Collections.emptyList(); // initially single rendition name/id (in the future we may support multiple)
     private Map<String, String> properties = Collections.emptyMap();
 
@@ -75,12 +75,12 @@ public class MultiPartBuilder
         this.relativePath = that.relativePath;
         this.updateNodeRef = that.updateNodeRef;
         this.description = that.description;
-        this.contentTypeQNameStr = that.contentTypeQNameStr;
         this.aspects = new ArrayList<>(that.aspects);
         this.majorVersion = that.majorVersion;
         this.overwrite = that.overwrite;
         this.autoRename = that.autoRename;
         this.nodeType = that.nodeType;
+        this.contentProperty = that.contentProperty;
         this.renditionIds = that.renditionIds;
         this.properties = new HashMap<>(that.properties);
     }
@@ -119,12 +119,6 @@ public class MultiPartBuilder
         return this;
     }
 
-    public MultiPartBuilder setContentTypeQNameStr(String contentTypeQNameStr)
-    {
-        this.contentTypeQNameStr = contentTypeQNameStr;
-        return this;
-    }
-
     public MultiPartBuilder setAspects(List<String> aspects)
     {
         this.aspects = aspects;
@@ -152,6 +146,12 @@ public class MultiPartBuilder
     public MultiPartBuilder setNodeType(String nodeType)
     {
         this.nodeType = nodeType;
+        return this;
+    }
+
+    public MultiPartBuilder setContentProperty(String contentProperty)
+    {
+        this.contentProperty = contentProperty;
         return this;
     }
 
@@ -277,12 +277,12 @@ public class MultiPartBuilder
         addPartIfNotNull(parts, "relativepath", relativePath);
         addPartIfNotNull(parts, "updatenoderef", updateNodeRef);
         addPartIfNotNull(parts, "description", description);
-        addPartIfNotNull(parts, "contenttype", contentTypeQNameStr);
         addPartIfNotNull(parts, "aspects", getCommaSeparated(aspects));
         addPartIfNotNull(parts, "majorversion", majorVersion);
         addPartIfNotNull(parts, "overwrite", overwrite);
         addPartIfNotNull(parts, "autorename", autoRename);
         addPartIfNotNull(parts, "nodetype", nodeType);
+        addPartIfNotNull(parts, "contentProperty", contentProperty);
         addPartIfNotNull(parts, "renditions", getCommaSeparated(renditionIds));
 
         HttpMethodParams params = new HttpMethodParams();
